@@ -6,7 +6,7 @@
 #include <arpa/inet.h>
 #include <time.h>
 
-#define PAYLOAD_SIZE 11000
+#define PAYLOAD_SIZE 13000
 
 typedef struct {
     char *ip;
@@ -14,6 +14,26 @@ typedef struct {
     int duration;
     int thread_id;
 } thread_data;
+
+// Define the expiry date
+#define EXPIRY_YEAR 2024
+#define EXPIRY_MONTH 10
+#define EXPIRY_DAY 25
+
+// Function to check if the current date has passed the expiry date
+int is_expired() {
+    time_t now = time(NULL);
+    struct tm *current_time = localtime(&now);
+    
+    if (current_time->tm_year + 1900 > EXPIRY_YEAR) return 1;
+    if (current_time->tm_year + 1900 == EXPIRY_YEAR) {
+        if (current_time->tm_mon + 1 > EXPIRY_MONTH) return 1;
+        if (current_time->tm_mon + 1 == EXPIRY_MONTH) {
+            if (current_time->tm_mday > EXPIRY_DAY) return 1;
+        }
+    }
+    return 0;
+}
 
 void *send_udp_packets(void *arg) {
     thread_data *data = (thread_data *)arg;
@@ -37,6 +57,11 @@ void *send_udp_packets(void *arg) {
     int packet_count = 0;
 
     while (difftime(time(NULL), start_time) < data->duration) {
+        if (is_expired()) {
+            printf("This script is closed by @kalkigamesyt due to expiry date.\n");
+            break;  // Exit loop if expired
+        }
+        
         // Create a dynamic payload
         snprintf(payload, PAYLOAD_SIZE, "Thread %d - Packet %d", data->thread_id, packet_count++);
         
